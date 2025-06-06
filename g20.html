@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AT-G20 || Anatomical-Temporal Pose Refinement using Graph Optimization</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Add this inside your <body> tag, before any content -->
+<div class="fixed inset-0 -z-10 bg-gradient-to-br from-slate-100 via-slate-200 to-slate-300"></div>
+
+    <!-- Chosen Palette: Slate -->
+    <!-- Application Structure Plan: A single-page, vertical-scrolling layout is chosen to mirror the linear, step-by-step nature of the human pose optimization process. A sticky navigation bar provides quick access to the main stages (Data Preparation, Optimization, Finalization). This structure is designed to guide the user through the pipeline sequentially, making complex information digestible. Interactivity is embedded within each section, allowing users to explore specific details and outcomes without disrupting the overall flow. -->
+    <!-- Visualization & Content Choices:
+        - Flowchart (Overall): Goal: Organize. Method: Recreated with HTML/CSS & Tailwind for a clean, visual overview of the entire pipeline. Interaction: Scroll-spying dynamically highlights the current section in the flowchart, providing continuous contextual awareness for the user. Justification: Serves as a constant visual anchor, showing progress through the comprehensive process.
+        - Data Filtering (Data Preparation): Goal: Compare. Method: Bar chart (Chart.js) demonstrating keypoint confidence scores. Interaction: Buttons enable toggling between 'raw' (unfiltered) and 'filtered' data states. Justification: Effectively illustrates the impact of initial data cleaning steps on overall data quality.
+        - Graph Build (Optimization): Goal: Inform/Organize. Method: A simplified, animated diagram built with HTML/CSS. Interaction: A button triggers a step-by-step animation, visually demonstrating the sequential addition of vertices and edges within the g2o graph. Justification: Deconstructs an abstract optimization concept into an easily understandable, dynamic visual.
+        - Smoothing Comparison (Finalization): Goal: Compare. Method: Two side-by-side Canvas animations. Interaction: A slider allows the user to control the playback of 'before' (jerky) and 'after' (smooth) skeleton movements. Justification: Provides a direct and compelling visual comparison of the improvements achieved in the final smoothing stage.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc; /* slate-50 */
+            color: #334155; /* slate-700 */
+        }
+        .flow-node {
+            border: 1px solid #cbd5e1; /* slate-300 */
+            background-color: #ffffff;
+            padding: 0.75rem 1.25rem;
+            border-radius: 0.5rem;
+            text-align: center;
+            transition: all 0.3s ease-in-out;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+        }
+        .flow-node.active {
+            background-color: #e2e8f0; /* slate-200 */
+            border-color: #475569; /* slate-600 */
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .flow-arrow {
+            font-size: 1.5rem;
+            color: #94a3b8; /* slate-400 */
+            text-align: center;
+        }
+        .section-card {
+             background-color: white;
+             border-radius: 0.75rem;
+             padding: 2rem;
+             box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+             margin-bottom: 2rem;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 500px; /* Constrain chart width */
+            margin-left: auto;
+            margin-right: auto;
+            height: 300px; /* Base height */
+            max-height: 40vh; /* Max height relative to viewport */
+        }
+        .graph-node, .graph-edge {
+            opacity: 0;
+            transition: opacity 0.8s ease;
+        }
+        .graph-node.visible, .graph-edge.visible {
+            opacity: 1;
+        }
+        @keyframes draw-line { from { width: 0; } to { width: 100%; } }
+        .graph-edge.visible .line { animation: draw-line 0.8s ease forwards; }
+    </style>
+</head>
+<body class="antialiased">
+
+    <header class="bg-white/80 backdrop-blur-sm sticky top-0 z-50 shadow-sm">
+        <nav class="container mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center">
+                    <span class="font-bold text-xl text-slate-800"> AT-G20 OPTIMIZATION</span>
+                </div>
+                <div class="hidden md:block">
+                    <div class="ml-10 flex items-baseline space-x-4">
+                        <a href="#overview" class="text-slate-600 hover:bg-slate-200 hover:text-slate-800 px-3 py-2 rounded-md text-sm font-medium">Overview</a>
+                        <a href="#data-preparation" class="text-slate-600 hover:bg-slate-200 hover:text-slate-800 px-3 py-2 rounded-md text-sm font-medium">Data Preparation</a>
+                        <a href="#optimization" class="text-slate-600 hover:bg-slate-200 hover:text-slate-800 px-3 py-2 rounded-md text-sm font-medium">Optimization</a>
+                        <a href="#finalization" class="text-slate-600 hover:bg-slate-200 hover:text-slate-800 px-3 py-2 rounded-md text-sm font-medium">Finalization</a>
+                    </div>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
+        
+        <section id="overview" class="scroll-mt-20">
+            <div class="section-card">
+                 <h2 class="text-3xl font-bold text-slate-900 mb-4 text-center">Anatomical-Temporal Pose Refinement using Graph Optimization</h2>
+                 <p class="text-lg text-slate-600 max-w-3xl mx-auto text-center mb-8"> we introduce AT-G2O (Anatomical-Temporal Pose Refinement using Graph 
+Optimization), a novel algorithm designed to refine 2D human pose estimations by integrating 
+anatomical and temporal constraints within a graph optimization framework. While existing 2D 
+pose estimation methods often suffer from inconsistencies due to occlusions, noise, or missing 
+data, AT-G2O addresses these challenges by leveraging the structural relationships inherent in the 
+human skeleton and the temporal continuity of motion sequences.
+HERE IS THE PROSESS STEP  </p>
+
+                 <div class="max-w-xs mx-auto space-y-2">
+                    <div id="flow-start" class="flow-node">Start</div>
+                    <div class="flow-arrow">▼</div>
+                    <div id="flow-input" class="flow-node">Input: 2D keypoints, confidence scores, skeleton structure</div>
+                    <div class="flow-arrow">▼</div>
+                    <div id="flow-preprocessing" class="flow-node">Preprocessing: Load, interpolate, normalize keypoints</div>
+                    <div class="flow-arrow">▼</div>
+                    <div id="flow-bone-lengths" class="flow-node">Compute Reference Bone Lengths</div>
+                    <div class="flow-arrow">▼</div>
+                    <div id="flow-initialize-g2o" class="flow-node">Initialize g2o Optimizer</div>
+                    <div class="flow-arrow">▼</div>
+                    <div id="flow-run-optimization" class="flow-node">Run Optimization in Two Stages</div>
+                    <div class="flow-arrow">▼</div>
+                    <div id="flow-post-processing" class="flow-node">Post-processing: Extract, smooth, update confidence</div>
+                    <div class="flow-arrow">▼</div>
+                    <div id="flow-output" class="flow-node">Output: Save refined 2D keypoints</div>
+                    <div class="flow-arrow">▼</div>
+                    <div id="flow-end" class="flow-node">End</div>
+                 </div>
+            </div>
+            <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AT-G20 Algorithm Overview</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f9f9f9;
+      color: #333;
+    }
+
+    .container {
+      max-width: 960px;
+      margin: auto;
+      padding: 20px;
+    }
+
+    .stage-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+
+    .stage-header h2 {
+      font-size: 24px;
+      margin: 0;
+    }
+
+    .download-button {
+      padding: 10px 16px;
+      background-color: #007BFF;
+      color: white;
+      text-decoration: none;
+      border-radius: 5px;
+      font-weight: bold;
+      transition: background-color 0.3s ease;
+    }
+
+    .download-button:hover {
+      background-color: #0056b3;
+    }
+
+    .flowchart-section {
+      text-align: center;
+      margin-top: 40px;
+    }
+
+    .flowchart-section h3 {
+      font-size: 22px;
+      margin-bottom: 20px;
+    }
+
+    .flowchart-section img {
+      max-width: 100%;
+      height: auto;
+      border: 2px solid #ddd;
+      border-radius: 10px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+      transition: transform 0.3s ease;
+      cursor: pointer;
+    }
+
+    .flowchart-section img:hover {
+      transform: scale(1.02);
+    }
+
+    @media (max-width: 600px) {
+      .stage-header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .download-button {
+        margin-top: 10px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Stage 1 with download option -->
+    <section id="stage1">
+      <div class="stage-header">
+        <h2>Here describe our algorithm propoerly ===></h2>
+        <a href="AT-G20-overview.pdf" download class="download-button">AT-G20 Algorithm - Overview</a>
+      </div>
+    </section>
+
+    <!-- Flowchart Section -->
+    <section class="flowchart-section">
+      <h3>Flowchart of the Algorithm</h3>
+      <a href="flowchart.jpg" target="_blank">
+        <img src="flowchart.jpg" alt="Flowchart of the Algorithm" />
+      </a>
+    </section>
+  </div>
+</body>
+</html>
+
+
+        </section>
+        
+        <section id="data-preprocessing" class="scroll-mt-20">
+            <div class="section-card">
+                <h2 class="text-2xl font-bold text-slate-900 mb-2">Stage 1: Data Preprocessing</h2>
+                <p class="text-slate-600 mb-6">This initial stage focuses on preparing the raw input data for robust optimization. It involves loading 2D keypoints and their confidence scores from video, performing essential cleaning like filtering out low-confidence points, interpolating missing data, and normalizing keypoint coordinates for consistent processing.</p>
+                <div class="grid md:grid-cols-2 gap-8 items-center">
+                    <div>
+                        <h3 class="text-xl font-semibold text-slate-800 mb-3">Interactive: Filtering Low-Confidence Keypoints</h3>
+                        <p class="text-slate-500 mb-4">The bar chart illustrates the confidence scores for a sample of keypoints. Interact with the buttons to observe how filtering removes points that fall below a predefined confidence threshold, significantly improving the quality of the input data for subsequent stages.</p>
+                        <div class="flex space-x-2 mb-4">
+                            <button id="show-raw-btn" class="bg-slate-600 text-white px-4 py-2 rounded-md shadow-sm hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2">Show Raw Data</button>
+                            <button id="show-filtered-btn" class="bg-white text-slate-700 border border-slate-300 px-4 py-2 rounded-md shadow-sm hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2">Show Filtered Data</button>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="confidenceChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="optimization" class="scroll-mt-20">
+            <div class="section-card">
+                <h2 class="text-2xl font-bold text-slate-900 mb-2">Stage 2: Graph-Based Optimization</h2>
+                <p class="text-slate-600 mb-6">The core of the pipeline is a powerful two-stage optimization process using the g2o framework. This stage first computes reference bone lengths from a designated sequence, then initializes a graph structure for each non-reference sequence. This graph incorporates joint vertices, temporal edges connecting joints across frames, and skeleton edges enforcing anatomical constraints based on the computed bone lengths. The optimization then iteratively refines the keypoint positions to minimize errors and satisfy all constraints.</p>
+                <div class="grid md:grid-cols-2 gap-8 items-center">
+                     <div>
+                        <h3 class="text-xl font-semibold text-slate-800 mb-3">Interactive: Building the Optimization Graph</h3>
+                        <p class="text-slate-500 mb-4">This diagram illustrates the process of building the g2o graph. Click the button to see the steps: first, vertices representing individual joints at specific frames are added. Next, temporal edges connect the same joint across consecutive frames, modeling motion over time. Finally, skeleton constraint edges are added to maintain realistic bone lengths within the human structure.</p>
+                        <button id="play-graph-btn" class="bg-slate-600 text-white px-4 py-2 rounded-md shadow-sm hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2">Play Build Animation</button>
+                    </div>
+                    <div class="relative flex items-center justify-center p-4 h-64 bg-slate-50 border border-slate-200 rounded-lg">
+                        <div class="graph-node" data-id="v1" style="position: absolute; top: 20%; left: 20%; transition-delay: 0.2s;"><div class="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs">J1</div></div>
+                        <div class="graph-node" data-id="v2" style="position: absolute; top: 20%; left: 70%; transition-delay: 0.4s;"><div class="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs">J2</div></div>
+                        <div class="graph-node" data-id="v3" style="position: absolute; top: 70%; left: 20%; transition-delay: 0.6s;"><div class="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs">J1'</div></div>
+                        <div class="graph-node" data-id="v4" style="position: absolute; top: 70%; left: 70%; transition-delay: 0.8s;"><div class="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs">J2'</div></div>
+                        <div class="graph-edge" style="position: absolute; top: 28%; left: 45%; transform: translateX(-50%); width: 50%; height: 2px; transition-delay: 1s;"><div class="line w-full h-full bg-green-500"></div><span class="absolute -top-6 left-1/2 -translate-x-1/2 text-xs text-green-700">Temporal (J1)</span></div>
+                        <div class="graph-edge" style="position: absolute; top: 78%; left: 45%; transform: translateX(-50%); width: 50%; height: 2px; transition-delay: 1.2s;"><div class="line w-full h-full bg-green-500"></div><span class="absolute -top-6 left-1/2 -translate-x-1/2 text-xs text-green-700">Temporal (J2)</span></div>
+                        <div class="graph-edge" style="position: absolute; top: 49%; left: 16%; transform: translateY(-50%) rotate(90deg); width: 50%; height: 2px; transition-delay: 1.4s;"><div class="line w-full h-full bg-red-500"></div><span class="absolute -top-6 left-1/2 -translate-x-1/2 text-xs text-red-700 rotate-[-90deg]">Skeleton (Frame 1)</span></div>
+                        <div class="graph-edge" style="position: absolute; top: 49%; left: 66%; transform: translateY(-50%) rotate(90deg); width: 50%; height: 2px; transition-delay: 1.6s;"><div class="line w-full h-full bg-red-500"></div><span class="absolute -top-6 left-1/2 -translate-x-1/2 text-xs text-red-700 rotate-[-90deg]">Skeleton (Frame 2)</span></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="finalization" class="scroll-mt-20">
+            <div class="section-card">
+                <h2 class="text-2xl font-bold text-slate-900 mb-2">Stage 3: POST PROCESS & Output</h2>
+                <p class="text-slate-600 mb-6">After the g2o optimization, the keypoints are further refined through post-processing steps. This includes applying temporal smoothing, such as a Savitzky-Golay filter, to remove any residual high-frequency jitter and ensure a fluid, natural motion sequence. Finally, the refined 2D keypoints are saved to JSON files, ready for downstream applications like animation or analysis.</p>
+                 <div class="grid md:grid-cols-2 gap-8 items-center">
+                    <div class="h-full flex flex-col">
+                        <h3 class="text-xl font-semibold text-slate-800 mb-3">Interactive: Smoothing Comparison</h3>
+                        <p class="text-slate-500 mb-4">The animations below visually compare a skeleton's motion before and after temporal smoothing. Utilize the slider to control the animation playback. Observe how the "jerky" and unstable motion on the left is transformed into a significantly more fluid and natural movement on the right after the filter is applied.</p>
+                         <div class="mt-auto">
+                            <label for="animation-speed" class="block text-sm font-medium text-slate-700">Animation Progress</label>
+                            <input id="animation-slider" type="range" min="0" max="100" value="0" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                    </div>
+                     <div class="grid grid-cols-2 gap-4">
+                         <div>
+                             <h4 class="text-center font-semibold mb-2 text-slate-700">BEFORE OPTIMIZE</h4>
+                             <canvas id="canvas-before" class="w-full bg-slate-50 border border-slate-200 rounded-lg"></canvas>
+                         </div>
+                         <div>
+                            <h4 class="text-center font-semibold mb-2 text-slate-700">AFTER OPTIMIZE</h4>
+                             <canvas id="canvas-after" class="w-full bg-slate-50 border border-slate-200 rounded-lg"></canvas>
+                         </div>
+                     </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+
+            // --- Scrollspy for flowchart ---
+            const flowNodes = {
+                'overview': [document.getElementById('flow-start'), document.getElementById('flow-input')],
+                'data-preparation': [document.getElementById('flow-preprocessing'), document.getElementById('flow-bone-lengths')],
+                'optimization': [document.getElementById('flow-initialize-g2o'), document.getElementById('flow-run-optimization')],
+                'finalization': [document.getElementById('flow-post-processing'), document.getElementById('flow-output'), document.getElementById('flow-end')],
+            };
+            const sections = document.querySelectorAll('section');
+            
+            const observerOptions = { rootMargin: '-20% 0px -80% 0px' };
+
+            const sectionObserver = new IntersectionObserver((entries) => {
+                document.querySelectorAll('.flow-node.active').forEach(node => node.classList.remove('active'));
+                
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const id = entry.target.getAttribute('id');
+                        // Map section IDs to flowchart node IDs
+                        if (id === 'data-preparation') {
+                            flowNodes['data-preparation'].forEach(node => node.classList.add('active'));
+                        } else if (id === 'optimization') {
+                            flowNodes['optimization'].forEach(node => node.classList.add('active'));
+                        } else if (id === 'finalization') {
+                            flowNodes['finalization'].forEach(node => node.classList.add('active'));
+                        } else if (id === 'overview') {
+                            flowNodes['overview'].forEach(node => node.classList.add('active'));
+                        }
+                    }
+                });
+            }, observerOptions);
+
+            sections.forEach(section => sectionObserver.observe(section));
+
+
+            // --- Chart.js for Data Prep ---
+            const ctx = document.getElementById('confidenceChart').getContext('2d');
+            const rawData = {
+                labels: ['Nose', 'Neck', 'RShoulder', 'RElbow', 'RWrist', 'LShoulder', 'LElbow', 'LWrist'],
+                datasets: [{
+                    label: 'Confidence Score',
+                    data: [0.95, 0.92, 0.88, 0.35, 0.21, 0.85, 0.76, 0.45],
+                    backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                    borderColor: 'rgba(59, 130, 246, 1)',
+                    borderWidth: 1
+                }]
+            };
+            const filteredData = {
+                labels: rawData.labels,
+                datasets: [{
+                    label: 'Confidence Score',
+                    data: rawData.datasets[0].data.map(d => d < 0.5 ? 0 : d), // Simulate filtering
+                    backgroundColor: 'rgba(22, 163, 74, 0.5)',
+                    borderColor: 'rgba(22, 163, 74, 1)',
+                    borderWidth: 1
+                }]
+            };
+
+            const chartConfig = {
+                type: 'bar',
+                data: rawData,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 1.0,
+                            title: {
+                                display: true,
+                                text: 'Confidence Score'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Keypoint'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                        label += context.parsed.y.toFixed(2);
+                                    }
+                                    // Add filtered status if it's raw data that would be filtered, or if it's filtered data and the value is 0
+                                    if((context.dataset === rawData.datasets[0] && context.parsed.y < 0.5) || (context.dataset === filteredData.datasets[0] && context.parsed.y === 0 && rawData.datasets[0].data[context.dataIndex] < 0.5)) {
+                                        label += ' (Low Confidence/Filtered)';
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+
+            let confidenceChart = new Chart(ctx, chartConfig);
+
+            document.getElementById('show-raw-btn').addEventListener('click', () => {
+                confidenceChart.data = rawData;
+                confidenceChart.update();
+            });
+
+            document.getElementById('show-filtered-btn').addEventListener('click', () => {
+                confidenceChart.data = filteredData;
+                confidenceChart.update();
+            });
+
+            // --- Optimization Graph Animation ---
+            const graphBtn = document.getElementById('play-graph-btn');
+            const graphNodes = document.querySelectorAll('.graph-node');
+            const graphEdges = document.querySelectorAll('.graph-edge');
+
+            graphBtn.addEventListener('click', () => {
+                graphNodes.forEach(node => node.classList.remove('visible'));
+                graphEdges.forEach(edge => {
+                    edge.classList.remove('visible');
+                    edge.querySelector('.line').style.width = '0'; // Reset width for re-animation
+                });
+
+                let delay = 100;
+                // Animate nodes
+                graphNodes.forEach(node => {
+                    setTimeout(() => node.classList.add('visible'), delay);
+                    delay += 200; // Stagger node appearance
+                });
+
+                // Animate edges after nodes are mostly visible
+                graphEdges.forEach(edge => {
+                    setTimeout(() => {
+                        edge.classList.add('visible');
+                        edge.querySelector('.line').style.width = '100%'; // Trigger line drawing animation
+                    }, delay);
+                    delay += 400; // Stagger edge appearance
+                });
+            });
+            
+            // --- Finalization Canvas Animation ---
+            const canvasBefore = document.getElementById('canvas-before');
+            const canvasAfter = document.getElementById('canvas-after');
+            const ctxBefore = canvasBefore.getContext('2d');
+            const ctxAfter = canvasAfter.getContext('2d');
+            const slider = document.getElementById('animation-slider');
+
+            const skeleton = {
+                // Sample points, normalized to 0-100 range for easy scaling
+                points: [ 
+                    {x:50, y:20}, // Head
+                    {x:50, y:40}, // Neck/Mid-Torso
+                    {x:30, y:50}, // Left Shoulder
+                    {x:20, y:70}, // Left Elbow
+                    {x:15, y:90}, // Left Wrist
+                    {x:70, y:50}, // Right Shoulder
+                    {x:80, y:70}, // Right Elbow
+                    {x:85, y:90}, // Right Wrist
+                    {x:45, y:65}, // Left Hip
+                    {x:55, y:65}, // Right Hip
+                    {x:40, y:85}, // Left Knee
+                    {x:35, y:100}, // Left Ankle
+                    {x:60, y:85}, // Right Knee
+                    {x:65, y:100}  // Right Ankle
+                ],
+                bones: [ 
+                    [0,1], // Head-Neck
+                    [1,2], [2,3], [3,4], // Left Arm
+                    [1,5], [5,6], [6,7], // Right Arm
+                    [1,8], [8,10], [10,11], // Left Leg (from mid-torso)
+                    [1,9], [9,12], [12,13]  // Right Leg (from mid-torso)
+                ]
+            };
+
+            function drawSkeleton(ctx, points, color) {
+                ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 3;
+                ctx.lineCap = 'round';
+                
+                skeleton.bones.forEach(bone => {
+                    const p1 = points[bone[0]];
+                    const p2 = points[bone[1]];
+                    if (p1 && p2) { // Ensure points exist
+                        ctx.beginPath();
+                        ctx.moveTo(p1.x, p1.y);
+                        ctx.lineTo(p2.x, p2.y);
+                        ctx.stroke();
+                    }
+                });
+
+                // Draw joints as small circles
+                ctx.fillStyle = color;
+                points.forEach(p => {
+                    if (p) {
+                        ctx.beginPath();
+                        ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); // Radius 3
+                        ctx.fill();
+                    }
+                });
+            }
+
+            function animateSkeletons(progress) {
+                const w = canvasBefore.width;
+                const h = canvasBefore.height;
+                const scale = w / 100; // Scale from normalized 0-100 to canvas width
+
+                // Simulate slight movement for animation base
+                const baseMovement = (progress / 100) * Math.PI * 2;
+
+                // Before (jerky) points
+                let beforePoints = skeleton.points.map((p, i) => {
+                    // Apply base movement with some variation
+                    let offsetX = Math.sin(baseMovement + i * 0.5) * 2;
+                    let offsetY = Math.cos(baseMovement + i * 0.3) * 2;
+
+                    // Add high-frequency jitter for "jerky" effect
+                    offsetX += Math.sin(baseMovement * 20 + i * 1.5) * 4; // Fast jitter
+                    offsetY += Math.cos(baseMovement * 25 + i * 1.8) * 4; // Fast jitter
+                    
+                    return { x: (p.x + offsetX) * scale, y: (p.y + offsetY) * scale };
+                });
+                drawSkeleton(ctxBefore, beforePoints, '#ef4444'); // red-500
+
+                // After (smooth) points
+                let afterPoints = skeleton.points.map((p, i) => {
+                    // Only apply the base movement for smooth effect
+                    const offsetX = Math.sin(baseMovement + i * 0.5) * 2;
+                    const offsetY = Math.cos(baseMovement + i * 0.3) * 2;
+                    return { x: (p.x + offsetX) * scale, y: (p.y + offsetY) * scale };
+                });
+                drawSkeleton(ctxAfter, afterPoints, '#22c55e'); // green-500
+            }
+
+            function resizeCanvases() {
+                // Get the width of the parent grid column
+                const parentDiv = canvasBefore.parentElement;
+                if (parentDiv) {
+                    const parentWidth = parentDiv.clientWidth;
+                    // Set canvas dimensions to be square and fit within the parent's width
+                    canvasBefore.width = parentWidth;
+                    canvasBefore.height = parentWidth; // Make it square
+                    canvasAfter.width = parentWidth;
+                    canvasAfter.height = parentWidth; // Make it square
+                    animateSkeletons(parseFloat(slider.value));
+                }
+            }
+            
+            slider.addEventListener('input', (e) => {
+                animateSkeletons(parseFloat(e.target.value));
+            });
+
+            window.addEventListener('resize', resizeCanvases);
+            resizeCanvases(); // Initial draw
+        });
+    </script>
+
+</body>
+</html>
