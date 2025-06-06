@@ -43,6 +43,8 @@ Filter out low-confidence keypoints (set to NaN if confidence < 0.3)
 Interpolate missing/low-confidence keypoints using linear interpolation 
 1.3 Set the first sequence (pX1) as reference: 
 Compute reference bone lengths (median length for each skeleton connection) 
+
+
 Step 2 : For Each Non-Reference Sequence 
 2.1 Initialize a g2o optimizer 
 2.2 For each frame: 
